@@ -16,10 +16,21 @@ area = [(270, 238), (294, 280), (592, 226), (552, 207)]
 tracker = Tracker()
 passingVehicles = set()
 
+frameCount = 0
+skipFrames = 5
+
 while True:
     ret, frame = capture.read()
     if not ret:
         break
+    
+    # skipping frames
+    frameCount += 1
+    if frameCount == skipFrames:
+        frameCount = 0
+    else:
+        continue
+
     frame = cv2.resize(frame, (1040, 500))
 
     results = model.predict(frame)
