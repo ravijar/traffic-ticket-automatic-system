@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from ultralytics import YOLO
 from tracker import *
+import time
 
 
 model = YOLO('yolov8s.pt')
@@ -12,18 +13,24 @@ classesFile = open("coco.txt", "r")
 fileData = classesFile.read()
 classList = fileData.split("\n")
 
-area = [(270, 238), (294, 280), (592, 226), (552, 207)]
 tracker = Tracker()
 passingVehicles = set()
+lineOnePassingTime = {}
+lineTwoPassingTime = {}
+distanceBetweenLines = 10   # in meters
 
 frameCount = 0
-skipFrames = 5
+skipFrames = 4
+
+lineOneY = 323
+lineTwoY = 367
+offset = 8
 
 while True:
     ret, frame = capture.read()
     if not ret:
         break
-    
+
     # skipping frames
     frameCount += 1
     if frameCount == skipFrames:
@@ -57,24 +64,45 @@ while True:
         x3, y3, x4, y4, id = boundBox
 
         # center of the bound box
-        cx = int(x3+x4)//2
-        cy = int(y3+y4)//2
+        vehicleCenterX = int(x3+x4)//2
+        vehicleCenterY = int(y3+y4)//2
 
-        # checking for the bound box is within the area
-        results = cv2.pointPolygonTest(
-            np.array(area, np.int32), ((cx, cy)), False)
+        # calculations for vehicles moving down
+        if lineOneY < vehicleCenterY+offset and lineOneY > vehicleCenterY-offset:
+            lineOnePassingTime[id] = time.time()
+        if id in lineOnePassingTime:
+            if lineTwoY < vehicleCenterY+offset and lineTwoY > vehicleCenterY-offset:
+                elapsedTime = time.time()-lineOnePassingTime[id]
+                speedKph = (distanceBetweenLines / elapsedTime) * 3.6
 
-        if results >= 0:
-            passingVehicles.add(id)
-            cv2.circle(frame, (cx, cy), 4, (0, 0, 225), -1)
-            cv2.rectangle(frame, (x3, y3), (x4, y4), (0, 0, 255), 2)
-            cv2.putText(frame, str(id), (x3, y3),
-                        cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
+                passingVehicles.add(id)
+                cv2.circle(frame, (vehicleCenterX, vehicleCenterY),
+                           4, (0, 0, 225), -1)
+                cv2.rectangle(frame, (x3, y3), (x4, y4), (0, 0, 255), 2)
+                cv2.putText(frame, f'{int(speedKph)} km/h', (x3, y3),
+                            cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
+
+        # calculations for vehicles moving up
+        if lineTwoY < vehicleCenterY+offset and lineTwoY > vehicleCenterY-offset:
+            lineTwoPassingTime[id] = time.time()
+        if id in lineTwoPassingTime:
+            if lineOneY < vehicleCenterY+offset and lineOneY > vehicleCenterY-offset:
+                elapsedTime = time.time()-lineTwoPassingTime[id]
+                speedKph = (distanceBetweenLines / elapsedTime) * 3.6
+
+                passingVehicles.add(id)
+                cv2.circle(frame, (vehicleCenterX, vehicleCenterY),
+                           4, (0, 0, 225), -1)
+                cv2.rectangle(frame, (x3, y3), (x4, y4), (0, 0, 255), 2)
+                cv2.putText(frame, f'{int(speedKph)} km/h', (x3, y3),
+                            cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
+
+    cv2.line(frame, (274, lineOneY), (824, lineOneY), (255, 255, 255), 1)
+    cv2.line(frame, (177, lineTwoY), (927, lineTwoY), (255, 255, 255), 1)
 
     vehicleCount = len(passingVehicles)
     cv2.putText(frame, str(vehicleCount), (50, 100),
                 cv2.FONT_HERSHEY_PLAIN, 2, (255, 255, 255), 2)
-    cv2.polylines(frame, [np.array(area, np.int32)], True, (255, 255, 0), 3)
     cv2.imshow("Detections", frame)
     if cv2.waitKey(1) & 0xFF == 27:
         break
